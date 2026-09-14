@@ -466,14 +466,14 @@ export default function Map() {
 
   if (error) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-dvh items-center justify-center">
         <p className="text-red-600">Failed to load segments: {error}</p>
       </div>
     );
   }
 
   return (
-    <div className="relative h-screen w-screen">
+    <div className="relative h-dvh w-full overflow-hidden">
       {loading && (
         <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-white/80">
           <div className="text-center">

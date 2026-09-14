@@ -62,7 +62,7 @@ export default function RatingPanel({ selected, myRating, onClose, onRated }: Pr
   };
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-[1000] rounded-t-2xl bg-white p-4 shadow-2xl sm:bottom-4 sm:left-1/2 sm:right-auto sm:w-96 sm:-translate-x-1/2 sm:rounded-2xl">
+    <div className="absolute bottom-0 left-0 right-0 z-[1000] rounded-t-2xl bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:bottom-4 sm:left-1/2 sm:right-auto sm:w-96 sm:-translate-x-1/2 sm:rounded-2xl sm:pb-4">
       <div className="mb-3 flex items-start justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-gray-400">{kindLabel}</p>
