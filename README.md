@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SideQuest — Sofia sidewalk rating map
 
-## Getting Started
+Rate the quality of sidewalks and intersections in Sofia while you walk.
+Next.js + Leaflet on the front, Supabase (Postgres) behind, road data from
+OpenStreetMap via Overpass.
 
-First, run the development server:
+## Local development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+cp .env.local.example .env.local   # fill in the Supabase values
+pnpm dev                           # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Useful scripts:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Command | What it does |
+| --- | --- |
+| `pnpm dev` / `pnpm build` / `pnpm start` | Next.js as usual |
+| `pnpm lint` | ESLint |
+| `pnpm migrate` | Apply every file in `supabase/migrations/` with `psql` (needs `SUPABASE_DB_URL`) |
+| `pnpm seed` | Fetch Sofia roads from Overpass, split/merge into segments, derive intersections, upsert to Supabase and delete stale rows. Add `--dry-run` to only print statistics. |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Data model
 
-## Learn More
+- **segments**: block-length pieces of road, split at real junctions and
+  merged back together where OSM had split one street into consecutive ways.
+  Minimum 20 m, merged runs capped at 400 m.
+- **intersections**: nodes where 3+ segments meet.
+- **ratings** / **intersection_ratings**: one vote (0 terrible, 1 passable,
+  2 good) per anonymous browser id per target; a repeat vote replaces the old one.
+  Medians are recomputed by a Postgres function on every vote.
 
-To learn more about Next.js, take a look at the following resources:
+## Environments & deployment
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+One hosted Supabase project (`ttihndnczfkdvicszeos`) is used by both local dev and
+production for now. The seed and ratings in it are real data.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- The app deploys to **Vercel** from the `master` branch of
+  [github.com/pepilipep/sidequest](https://github.com/pepilipep/sidequest) through
+  Vercel's GitHub integration: every push to `master` triggers a production deploy,
+  every push to another branch gives a preview URL.
+- Vercel env vars (Project Settings → Environment Variables), for both Production
+  and Preview: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+  `SUPABASE_SERVICE_ROLE_KEY`. `SUPABASE_DB_URL` is only for local scripts and
+  must not be set on Vercel.
+- Schema changes: add a file to `supabase/migrations/` and run `pnpm migrate`
+  locally before the code that needs it ships.
+- Data refresh: run `pnpm seed` locally whenever the OSM data or the segment
+  logic changes. It is idempotent; existing votes survive as long as segment ids
+  do not change.
