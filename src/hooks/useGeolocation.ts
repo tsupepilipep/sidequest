@@ -33,6 +33,12 @@ const GEO_OPTIONS: PositionOptions = {
   maximumAge: 5000,
 };
 
+const FRESH_GEO_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 8000,
+  maximumAge: 3000,
+};
+
 export function useGeolocation() {
   const [state, setState] = useState<GeolocationState>({
     position: null,
@@ -60,21 +66,30 @@ export function useGeolocation() {
     }));
   }, []);
 
-  const locate = useCallback(() => {
-    if (!navigator.geolocation) {
-      setState((prev) => ({
-        ...prev,
-        error: "Geolocation not supported",
-      }));
-      return;
-    }
-    setState((prev) => ({ ...prev, loading: true, error: null }));
-    navigator.geolocation.getCurrentPosition(
-      handleSuccess,
-      handleError,
-      GEO_OPTIONS
-    );
-  }, [handleSuccess, handleError]);
+  /**
+   * Request the current position once.
+   * With `fresh: true` only a fix from the last few seconds is accepted,
+   * so an explicit "relocate" gets a recent reading without forcing the
+   * device to wait for a brand-new GPS lock (which can take ~10s).
+   */
+  const locate = useCallback(
+    (options?: { fresh?: boolean }) => {
+      if (!navigator.geolocation) {
+        setState((prev) => ({
+          ...prev,
+          error: "Geolocation not supported",
+        }));
+        return;
+      }
+      setState((prev) => ({ ...prev, loading: true, error: null }));
+      navigator.geolocation.getCurrentPosition(
+        handleSuccess,
+        handleError,
+        options?.fresh ? FRESH_GEO_OPTIONS : GEO_OPTIONS
+      );
+    },
+    [handleSuccess, handleError]
+  );
 
   const startWatching = useCallback(() => {
     if (!navigator.geolocation) return;

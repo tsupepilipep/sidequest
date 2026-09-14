@@ -16,8 +16,10 @@ export default function LocateButton({
   return (
     <button
       onClick={onClick}
-      title={error ?? "Find my location"}
-      className="absolute bottom-20 right-4 z-[1000] flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-lg transition-colors hover:bg-gray-50 active:bg-gray-100"
+      title={error ?? "Relocate: refresh my location and pick the nearest sidewalk"}
+      aria-label="Relocate"
+      disabled={loading}
+      className="absolute right-4 top-4 z-[1000] flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-lg transition-colors hover:bg-gray-50 active:bg-gray-100 disabled:cursor-wait"
     >
       {loading ? (
         <svg
