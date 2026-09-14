@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate": "tsx scripts/migrate.ts",
+    "seed": "tsx scripts/seed-segments.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
