@@ -37,11 +37,12 @@ One hosted Supabase project (`ttihndnczfkdvicszeos`) is used by both local dev a
 production for now. The seed and ratings in it are real data.
 
 - The app deploys to **Vercel** (project `sidequest`, team `dgpt1`). Live at
-  **https://sidequest-omega-five.vercel.app** (the `sidequest-dgpt1.vercel.app` alias is behind Vercel team SSO). Once the GitHub integration is connected
-  (Project Settings → Git) every push to `master` of
-  [github.com/tsupepilipep/sidequest](https://github.com/tsupepilipep/sidequest) deploys to
-  production and every other branch gets a preview URL. Until then, deploy manually with
-  `npx vercel deploy --prod --scope dgpt1` after `npx vercel login`.
+  **https://sidequest-omega-five.vercel.app** (the `sidequest-dgpt1.vercel.app` alias is
+  behind Vercel team SSO). The project is connected to
+  [github.com/tsupepilipep/sidequest](https://github.com/tsupepilipep/sidequest): every push
+  to `master` deploys to production and every other branch gets a preview URL. Manual
+  deploys are still possible with `npx vercel deploy --prod --scope dgpt1` after
+  `npx vercel login`.
 - Vercel env vars (Project Settings → Environment Variables), for both Production
   and Preview: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
   `SUPABASE_SERVICE_ROLE_KEY`. `SUPABASE_DB_URL` is only for local scripts and
