@@ -39,7 +39,7 @@ production for now. The seed and ratings in it are real data.
 - The app deploys to **Vercel** (project `sidequest`, team `dgpt1`). Live at
   **https://sidequest-omega-five.vercel.app** (the `sidequest-dgpt1.vercel.app` alias is behind Vercel team SSO). Once the GitHub integration is connected
   (Project Settings → Git) every push to `master` of
-  [github.com/pepilipep/sidequest](https://github.com/pepilipep/sidequest) deploys to
+  [github.com/tsupepilipep/sidequest](https://github.com/tsupepilipep/sidequest) deploys to
   production and every other branch gets a preview URL. Until then, deploy manually with
   `npx vercel deploy --prod --scope dgpt1` after `npx vercel login`.
 - Vercel env vars (Project Settings → Environment Variables), for both Production
