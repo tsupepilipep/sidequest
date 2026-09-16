@@ -48,13 +48,31 @@ export function useGeolocation() {
   });
 
   const watchIdRef = useRef<number | null>(null);
+  // Whether the caller wants a watch running. The actual watch is torn down
+  // while the page is hidden (GPS is the biggest battery cost of the app) and
+  // re-created when it becomes visible again.
+  const wantWatchRef = useRef(false);
 
   const handleSuccess = useCallback((pos: GeolocationPosition) => {
-    setState({
-      position: { lat: pos.coords.latitude, lng: pos.coords.longitude },
-      accuracy: pos.coords.accuracy,
-      loading: false,
-      error: null,
+    const { latitude, longitude, accuracy } = pos.coords;
+    setState((prev) => {
+      // watchPosition can fire repeatedly with an unchanged fix; skip the
+      // re-render in that case so the map does no work for it.
+      if (
+        !prev.loading &&
+        !prev.error &&
+        prev.position?.lat === latitude &&
+        prev.position?.lng === longitude &&
+        prev.accuracy === accuracy
+      ) {
+        return prev;
+      }
+      return {
+        position: { lat: latitude, lng: longitude },
+        accuracy,
+        loading: false,
+        error: null,
+      };
     });
   }, []);
 
@@ -91,7 +109,7 @@ export function useGeolocation() {
     [handleSuccess, handleError]
   );
 
-  const startWatching = useCallback(() => {
+  const beginWatch = useCallback(() => {
     if (!navigator.geolocation) return;
     if (watchIdRef.current !== null) return;
     watchIdRef.current = navigator.geolocation.watchPosition(
@@ -101,20 +119,38 @@ export function useGeolocation() {
     );
   }, [handleSuccess, handleError]);
 
-  const stopWatching = useCallback(() => {
+  const endWatch = useCallback(() => {
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
   }, []);
 
+  const startWatching = useCallback(() => {
+    wantWatchRef.current = true;
+    if (typeof document === "undefined" || document.visibilityState !== "hidden") {
+      beginWatch();
+    }
+  }, [beginWatch]);
+
+  const stopWatching = useCallback(() => {
+    wantWatchRef.current = false;
+    endWatch();
+  }, [endWatch]);
+
+  // Pause the GPS watch while the page is in the background and resume it
+  // when the user comes back. Their first fix on return is a fresh one.
   useEffect(() => {
-    return () => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      }
+    const onVisibility = () => {
+      if (!wantWatchRef.current) return;
+      if (document.visibilityState === "hidden") endWatch();
+      else beginWatch();
     };
-  }, []);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [beginWatch, endWatch]);
+
+  useEffect(() => endWatch, [endWatch]);
 
   return { ...state, locate, startWatching, stopWatching };
 }

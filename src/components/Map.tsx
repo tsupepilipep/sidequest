@@ -60,12 +60,12 @@ const INTERSECTION_MIN_ZOOM_ACTIVE = 15;
 const VIEW_MODE_KEY = "sidequest_view_mode";
 const TARGET_MODE_KEY = "sidequest_target_mode";
 const LIVE_MODE_KEY = "sidequest_live_mode";
-// Live mode: how often to re-pick the nearest target and re-centre the map.
-const LIVE_INTERVAL_MS = 5000;
 // Live mode: ignore GPS jitter smaller than this when deciding whether to pan.
 const LIVE_MIN_MOVE_M = 3;
 // Below this zoom, entering live mode zooms in so the street is legible.
 const LIVE_MIN_ZOOM = 16;
+// Length of the fly-in animation to the user's position.
+const FLY_DURATION_S = 1.2;
 
 function readStored(key: string): string | null {
   try {
@@ -209,8 +209,9 @@ export default function Map() {
     readStored(TARGET_MODE_KEY) === "intersection" ? "intersection" : "sidewalk"
   );
 
-  // Live mode: follow the user and auto-select the nearest target. Remembered.
-  const [liveMode, setLiveModeState] = useState<boolean>(() => readStored(LIVE_MODE_KEY) === "on");
+  // Live mode: follow the user and auto-select the nearest target. On by
+  // default; remembered once the user has toggled it.
+  const [liveMode, setLiveModeState] = useState<boolean>(() => readStored(LIVE_MODE_KEY) !== "off");
   const toggleLiveMode = useCallback(() => {
     const next = !liveMode;
     writeStored(LIVE_MODE_KEY, next ? "on" : "off");
@@ -224,6 +225,10 @@ export default function Map() {
   const userHasSelected = useRef(false);
   // Set when the user presses "relocate"; consumed by the next position fix.
   const pendingRelocate = useRef(false);
+  // Until when a flyTo animation is expected to run. Leaflet cancels an
+  // in-flight flyTo on any panTo, so live-mode pans wait for it to finish
+  // rather than leaving the map stuck at the zoomed-out level.
+  const flyingUntilRef = useRef(0);
 
   const segments = useMemo(() => geojson?.features ?? [], [geojson]);
   const intersections = useMemo(() => intersectionsGeo?.features ?? [], [intersectionsGeo]);
@@ -267,14 +272,27 @@ export default function Map() {
     [pickNearestOfKind]
   );
 
+  // The Leaflet layers are mounted once per data load and restyled in place,
+  // so the feature objects they hold go stale after an optimistic update.
+  // Style callbacks therefore look up the current properties by id.
+  const ratedById = useMemo(() => {
+    // globalThis: this component is itself named Map.
+    const byId = new globalThis.Map<string, RatedProperties>();
+    for (const f of segments) byId.set(f.properties.id, f.properties);
+    for (const f of intersections) byId.set(f.properties.id, f.properties);
+    return byId;
+  }, [segments, intersections]);
+
   // Colour for any rated thing under the current view mode.
   const { ratings: myRatingMap } = myRatings;
   const colorFor = useCallback(
-    (props: RatedProperties): string =>
-      viewMode === "global"
-        ? ratingColor(props.median_rating)
-        : ratingColor(myRatingMap[props.id] ?? null),
-    [viewMode, myRatingMap]
+    (props: RatedProperties): string => {
+      const current = ratedById.get(props.id) ?? props;
+      return viewMode === "global"
+        ? ratingColor(current.median_rating)
+        : ratingColor(myRatingMap[props.id] ?? null);
+    },
+    [viewMode, myRatingMap, ratedById]
   );
 
   const segmentStyle = useCallback(
@@ -286,20 +304,26 @@ export default function Map() {
     [colorFor]
   );
 
-  // Intersections are drawn as dots: bold and tappable when they're the
-  // active kind, small and inert otherwise.
+  // Intersections are drawn as dots: bold when they're the active kind, small
+  // otherwise. Everything that changes with the mode goes through the style
+  // callback so the switch restyles the ~9k markers in place rather than
+  // rebuilding the layer; a rebuild took seconds on a phone, during which the
+  // toggle already showed the new mode while the map was still in the old.
+  // The dots stay tappable in sidewalk mode: a tap on one picks the nearest
+  // target of the current kind at that point, exactly like a tap on the map.
   const intersectionActive = targetMode === "intersection";
   const intersectionPointToLayer = useCallback(
-    (feature: Feature, latlng: L.LatLng): Layer =>
-      L.circleMarker(latlng, {
-        pane: INTERSECTIONS_PANE,
-        radius: intersectionActive ? 7 : 4,
-        color: "#ffffff",
-        weight: intersectionActive ? 2 : 1,
-        fillColor: colorFor(feature.properties as IntersectionProperties),
-        fillOpacity: intersectionActive ? 0.95 : 0.7,
-        interactive: intersectionActive,
-      }),
+    (_feature: Feature, latlng: L.LatLng): Layer =>
+      L.circleMarker(latlng, { pane: INTERSECTIONS_PANE, color: "#ffffff" }),
+    []
+  );
+  const intersectionStyle = useCallback(
+    (feature?: Feature): PathOptions & { radius: number } => ({
+      radius: intersectionActive ? 7 : 4,
+      weight: intersectionActive ? 2 : 1,
+      fillOpacity: intersectionActive ? 0.95 : 0.7,
+      fillColor: colorFor(feature?.properties as IntersectionProperties),
+    }),
     [intersectionActive, colorFor]
   );
 
@@ -335,8 +359,9 @@ export default function Map() {
    */
   const snapTo = useCallback((position: GeoPosition, replaceSelection: boolean) => {
     mapRef.current?.flyTo([position.lat, position.lng], AUTO_SNAP_ZOOM, {
-      duration: 1.2,
+      duration: FLY_DURATION_S,
     });
+    flyingUntilRef.current = Date.now() + FLY_DURATION_S * 1000 + 100;
     const picked = pickNearestRef.current(position.lat, position.lng);
     if (picked || replaceSelection) {
       setSelected(picked);
@@ -374,51 +399,55 @@ export default function Map() {
     locate({ fresh: true });
   }, [locate, position, snapTo]);
 
-  // Live mode: every few seconds pick the target nearest to where the user is
+  // Live mode: on every GPS fix pick the target nearest to where the user is
   // now and keep the map centred on them. No taps needed while walking.
+  // Reacting to fixes (rather than polling on a timer) keeps the selection in
+  // step with the location dot, which is driven by the same fixes.
+  const liveFollow = useRef<{ started: boolean; lastPan: GeoPosition | null }>({
+    started: false,
+    lastPan: null,
+  });
   useEffect(() => {
     if (!liveMode) return;
+    liveFollow.current = { started: false, lastPan: null };
+    // Make sure a fix is on its way if we don't have one yet.
+    if (!positionRef.current) locate();
+  }, [liveMode, locate]);
 
-    let first = true;
-    let lastPan: GeoPosition | null = null;
+  useEffect(() => {
+    if (!liveMode || !geo.position) return;
+    const pos = geo.position;
 
-    const tick = () => {
-      const pos = positionRef.current;
-      const map = mapRef.current;
-      if (!pos) return;
+    const picked = pickNearest(pos.lat, pos.lng);
+    setSelected((prev) =>
+      prev?.kind === picked?.kind && prev?.feature.properties.id === picked?.feature.properties.id
+        ? prev
+        : picked
+    );
+    // Live selection is automatic, so it never counts as a manual pick.
+    userHasSelected.current = false;
+    hasAutoSnapped.current = true;
 
-      const picked = pickNearestRef.current(pos.lat, pos.lng);
-      setSelected((prev) =>
-        prev?.kind === picked?.kind && prev?.feature.properties.id === picked?.feature.properties.id
-          ? prev
-          : picked
-      );
-      // Live selection is automatic, so it never counts as a manual pick.
-      userHasSelected.current = false;
-      hasAutoSnapped.current = true;
-
-      if (!map) return;
-      const latlng: [number, number] = [pos.lat, pos.lng];
-      if (first) {
-        first = false;
-        lastPan = pos;
-        if (map.getZoom() < LIVE_MIN_ZOOM) {
-          map.flyTo(latlng, AUTO_SNAP_ZOOM, { duration: 1.2 });
-        } else {
-          map.panTo(latlng, { animate: true, duration: 0.5 });
-        }
-      } else if (!lastPan || distanceM(lastPan, pos) > LIVE_MIN_MOVE_M) {
-        lastPan = pos;
+    const map = mapRef.current;
+    if (!map) return;
+    const follow = liveFollow.current;
+    const latlng: [number, number] = [pos.lat, pos.lng];
+    if (!follow.started) {
+      follow.started = true;
+      follow.lastPan = pos;
+      if (map.getZoom() < LIVE_MIN_ZOOM) {
+        map.flyTo(latlng, AUTO_SNAP_ZOOM, { duration: FLY_DURATION_S });
+        flyingUntilRef.current = Date.now() + FLY_DURATION_S * 1000 + 100;
+      } else {
         map.panTo(latlng, { animate: true, duration: 0.5 });
       }
-    };
-
-    // Make sure a fix is on its way if we don't have one yet, then start.
-    if (!positionRef.current) locate();
-    tick();
-    const id = setInterval(tick, LIVE_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [liveMode, locate]);
+    } else if (Date.now() < flyingUntilRef.current) {
+      // A fly-in is still running; let it land before following again.
+    } else if (!follow.lastPan || distanceM(follow.lastPan, pos) > LIVE_MIN_MOVE_M) {
+      follow.lastPan = pos;
+      map.panTo(latlng, { animate: true, duration: 0.5 });
+    }
+  }, [liveMode, geo.position, pickNearest]);
 
   const { set: setMyRating } = myRatings;
   const handleRated = useCallback(
@@ -446,23 +475,21 @@ export default function Map() {
     [geojson, setData, intersectionsGeo, setIntersectionsGeo, setMyRating]
   );
 
-  // The GeoJSON layers only restyle when remounted, so key them on everything
-  // that changes their appearance: the data, the view mode, the target mode,
-  // and (in personal view) this browser's own ratings.
-  const ratingsKey = viewMode === "personal" ? myRatings.version : 0;
-  const segmentsKey = useMemo(
-    () => (geojson ? `${geojson.features.length}-${viewMode}-${ratingsKey}-${Date.now()}` : "empty"),
-    [geojson, viewMode, ratingsKey]
-  );
-  const intersectionsKey = useMemo(
-    () =>
-      intersectionsGeo
-        ? `${intersectionsGeo.features.length}-${viewMode}-${targetMode}-${ratingsKey}-${Date.now()}`
-        : "empty",
-    [intersectionsGeo, viewMode, targetMode, ratingsKey]
-  );
+  // react-leaflet restyles a GeoJSON layer in place (setStyle) whenever its
+  // `style` callback changes identity, so colour and mode changes never need
+  // a remount. The layers are only created once, when their data loads.
+  // Remounting 17k+ paths on every vote was a major source of jank.
+  const segmentsKey = geojson ? "segments-loaded" : "segments-empty";
+  const intersectionsKey = intersectionsGeo ? "intersections-loaded" : "intersections-empty";
+
+  // Intersection dots are hidden by hiding their pane rather than unmounting
+  // the layer, so crossing the zoom threshold doesn't rebuild ~9k markers.
   const showIntersections =
     zoom >= (intersectionActive ? INTERSECTION_MIN_ZOOM_ACTIVE : INTERSECTION_MIN_ZOOM);
+  useEffect(() => {
+    const pane = mapRef.current?.getPane(INTERSECTIONS_PANE);
+    if (pane) pane.style.display = showIntersections ? "" : "none";
+  }, [showIntersections]);
 
   if (error) {
     return (
@@ -488,6 +515,10 @@ export default function Map() {
         zoom={DEFAULT_ZOOM}
         className="h-full w-full"
         zoomControl={false}
+        // Draw the ~17k segment paths and ~9k intersection dots on canvases
+        // instead of as individual SVG DOM nodes. Far lighter on mobile,
+        // especially while panning in live mode.
+        preferCanvas
       >
         <MapRefSetter mapRef={mapRef} />
         <TileLayer
@@ -504,12 +535,13 @@ export default function Map() {
           />
         )}
 
-        {intersectionsGeo && showIntersections && (
+        {intersectionsGeo && (
           <GeoJSON
             key={intersectionsKey}
             data={intersectionsGeo}
             pane={INTERSECTIONS_PANE}
             pointToLayer={intersectionPointToLayer}
+            style={intersectionStyle}
             onEachFeature={onEachFeature}
           />
         )}
