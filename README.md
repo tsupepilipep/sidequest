@@ -44,9 +44,12 @@ production for now. The seed and ratings in it are real data.
   deploys are still possible with `npx vercel deploy --prod --scope dgpt1` after
   `npx vercel login`.
 - Vercel env vars (Project Settings → Environment Variables), for both Production
-  and Preview: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-  `SUPABASE_SERVICE_ROLE_KEY`. `SUPABASE_DB_URL` is only for local scripts and
-  must not be set on Vercel.
+  and Preview: `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+  `SUPABASE_DB_URL` is only for local scripts and must not be set on Vercel.
+- The browser never talks to Supabase directly: all reads and writes go through
+  the API routes with the service role key, and RLS is enabled on every table
+  with no policies, so the anon/publishable key is unused and must not be
+  shipped to the client.
 - Schema changes: add a file to `supabase/migrations/` and run `pnpm migrate`
   locally before the code that needs it ships.
 - Data refresh: run `pnpm seed` locally whenever the OSM data or the segment
