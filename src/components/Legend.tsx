@@ -1,6 +1,15 @@
 "use client";
 
 import type { ViewMode } from "@/lib/types";
+import { ACCESS_COLOR, GLYPH, UNDERPASS_COLOR } from "./PoiMarkers";
+
+const POIS = [
+  { color: ACCESS_COLOR.elevator, label: "Metro elevator", glyph: GLYPH.elevator, round: false },
+  { color: ACCESS_COLOR.ramp, label: "Ramp", glyph: GLYPH.ramp, round: false },
+  { color: UNDERPASS_COLOR.ramp, label: "Underpass with ramp", glyph: GLYPH.underpass, round: true },
+  { color: UNDERPASS_COLOR.no_ramp, label: "Underpass, no ramps", glyph: GLYPH.underpass, round: true },
+  { color: UNDERPASS_COLOR.unknown, label: "Underpass, unknown", glyph: GLYPH.underpass, round: true },
+];
 
 const ITEMS = [
   { color: "#22c55e", label: "Good (1.34–2)" },
@@ -32,6 +41,18 @@ export default function Legend({ mode, offsetBottom = false }: Props) {
           <span className="text-gray-600">{label}</span>
         </div>
       ))}
+      <div className="mt-1 border-t border-gray-200 pt-1">
+        {POIS.map(({ color, label, glyph, round }) => (
+          <div key={label} className="flex items-center gap-2 py-0.5">
+            <span
+              className={`inline-flex h-4 w-4 shrink-0 ${round ? "rounded-full" : "rounded-[4px]"}`}
+              style={{ backgroundColor: color }}
+              dangerouslySetInnerHTML={{ __html: glyph }}
+            />
+            <span className="text-gray-600">{label}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

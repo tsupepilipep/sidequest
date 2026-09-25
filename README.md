@@ -19,6 +19,8 @@ Useful scripts:
 | `pnpm dev` / `pnpm build` / `pnpm start` | Next.js as usual |
 | `pnpm lint` | ESLint |
 | `pnpm migrate` | Apply every file in `supabase/migrations/` with `psql` (needs `SUPABASE_DB_URL`) |
+| `pnpm seed:metro` | Fetch Sofia metro elevators (OSM `highway=elevator` nodes within 150 m of a subway station or 50 m of a subway entrance, excluding ones whose `level` tag is underground-only) and upsert them to `access_points` as `source = 'osm'`, deleting stale OSM rows. Never touches user-added rows or any other table. Add `--dry-run` to only print counts. |
+| `pnpm seed:underpasses` | Cluster Sofia's OSM pedestrian tunnels into underpasses and upsert one point each to `underpasses` as `source = 'osm'`, named after the nearest street segments. Same guarantees as above. |
 | `pnpm seed` | Fetch Sofia roads from Overpass, split/merge into segments, derive intersections, upsert to Supabase and delete stale rows. Add `--dry-run` to only print statistics. |
 
 ## Data model
@@ -31,6 +33,28 @@ Useful scripts:
   2 good) per anonymous browser id per target; a repeat vote replaces the old one
   (its `created_at` stays, so a vote is only ever counted once on the leaderboard).
   Medians are recomputed by a Postgres function on every vote.
+- **access_points**: elevators and ramps as points. Elevators come from OSM
+  (`pnpm seed:metro`, shafts tagged as underground-only are skipped; untagged
+  ones are kept since they are usually the street lifts nobody tagged). Ramps,
+  and any elevator OSM lacks, are added by users on the spot with the "+" button
+  or from an underpass's panel. A user may remove a point they added (the API
+  checks `created_by`); ids of a browser's own points are cached in localStorage.
+- **underpasses**: one point per pedestrian underpass, clustered from OSM tunnel
+  ways (`pnpm seed:underpasses`: tunnels sharing a node, or joined by an untagged
+  way under 30 m such as the stairs down, form one underpass) or added by a user.
+- **underpass_votes**: one vote per browser per underpass, `has_ramp` true/false.
+  An underpass shows green when a ramp access point lies within 60 m or "there is
+  a ramp" votes outnumber "no ramps", red when there are "no ramps" votes, grey
+  otherwise.
+
+## Adding points
+
+One flow for elevators, ramps and underpasses (`AddPointSheet`): a crosshair
+sits at the map centre, the user pans until it is on the spot, picks the kind
+and taps Place. In live mode the map already follows the user, so the crosshair
+is where they stand. "Mark the ramp" on an underpass panel opens the same sheet
+with Ramp preselected and the map centred on the underpass. Points are
+validated to lie inside a loose Sofia bounding box.
 - **profiles**: a random nickname (adjective + creature, `src/lib/nicknames.ts`)
   per browser id, created lazily by `/api/profile` or when the browser first
   shows up on the leaderboard. The user can shuffle theirs.

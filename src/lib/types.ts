@@ -104,3 +104,64 @@ export interface LeaderboardResponse {
   /** How many browsers have voted in the period. */
   raters: number;
 }
+
+/** Where a point came from: the OSM seed or a person adding it on the spot. */
+export type PointSource = "osm" | "user";
+
+/** A step-free way in or out: an elevator or a ramp. */
+export type AccessKind = "elevator" | "ramp";
+
+export interface AccessPointProperties {
+  id: string;
+  kind: AccessKind;
+  source: PointSource;
+  /** Nearest station or entrance name for OSM elevators; null for user points. */
+  label: string | null;
+  /** OSM level tag, e.g. "0;-1", if any. */
+  level: string | null;
+}
+
+export type AccessPointFeature = Feature<Point, AccessPointProperties>;
+export type AccessPointsGeoJSON = FeatureCollection<Point, AccessPointProperties>;
+
+export interface AccessPointRow {
+  id: string;
+  kind: AccessKind;
+  source: PointSource;
+  label: string | null;
+  level: string | null;
+  geojson: Point;
+}
+
+export interface UnderpassProperties {
+  id: string;
+  source: PointSource;
+  /** Nearest street name(s), or null. */
+  name: string | null;
+  /** A ramp access point lies within RAMP_RADIUS_M of this underpass. */
+  has_ramp_nearby: boolean;
+  /** Votes saying "no ramps here". */
+  no_ramp_votes: number;
+  /** Votes saying "there is a ramp". */
+  ramp_votes: number;
+  /** The requesting browser's own vote, if any. */
+  my_vote: boolean | null;
+}
+
+export type UnderpassFeature = Feature<Point, UnderpassProperties>;
+export type UnderpassesGeoJSON = FeatureCollection<Point, UnderpassProperties>;
+
+export interface UnderpassRow {
+  id: string;
+  source: PointSource;
+  name: string | null;
+  geojson: Point;
+}
+
+/** What people can add to the map on the spot. */
+export type AddableKind = AccessKind | "underpass";
+
+/** The point-of-interest currently open in a panel. */
+export type SelectedPoi =
+  | { kind: "access"; feature: AccessPointFeature }
+  | { kind: "underpass"; feature: UnderpassFeature };

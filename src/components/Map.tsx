@@ -17,11 +17,14 @@ import { useSegments } from "@/hooks/useSegments";
 import { useIntersections } from "@/hooks/useIntersections";
 import { useGeolocation, type GeoPosition } from "@/hooks/useGeolocation";
 import { useMyRatings } from "@/hooks/useMyRatings";
+import { usePois } from "@/hooks/usePois";
 import { useWalk, walkTotals } from "@/hooks/useWalk";
 import { length } from "@turf/length";
 import { findNearestIntersection, findNearestSegment } from "@/lib/geo/snap";
 import type {
   IntersectionProperties,
+  AddableKind,
+  SelectedPoi,
   RatedProperties,
   RatingValue,
   SegmentProperties,
@@ -33,6 +36,10 @@ import RatingPanel, { optimisticUpdate } from "./RatingPanel";
 import Legend from "./Legend";
 import LocateButton from "./LocateButton";
 import LiveButton from "./LiveButton";
+import PoiMarkers, { POI_PANE } from "./PoiMarkers";
+import PoiPanel from "./PoiPanel";
+import AddPointSheet from "./AddPointSheet";
+import AddButton from "./AddButton";
 import SegmentedControl from "./SegmentedControl";
 import StatsButton from "./StatsButton";
 import StatsSheet from "./StatsSheet";
@@ -49,13 +56,21 @@ const SELECTION_COLOR = "#1d4ed8";
 // Custom map panes, created once when the map mounts. Leaflet's default
 // overlayPane is z-index 400 and markerPane 600; these sit in between so
 // intersection dots draw above the segment lines and the selection
-// highlight draws above everything else.
+// highlight draws above both. Point markers (elevators, ramps, underpasses)
+// go above the selection: with canvas rendering every pane's canvas spans the
+// whole viewport and eats pointer events, so anything under the selection
+// pane cannot be tapped while something is selected (in live mode: always).
 const INTERSECTIONS_PANE = "intersections";
 const SELECTION_PANE = "selected-target";
 const PANES: { name: string; zIndex: number }[] = [
   { name: INTERSECTIONS_PANE, zIndex: 420 },
   { name: SELECTION_PANE, zIndex: 450 },
+  { name: POI_PANE, zIndex: 460 },
 ];
+
+// Point markers are DOM nodes and only useful once you can see the street
+// layout, so keep them for close zooms.
+const POI_MIN_ZOOM = 15;
 
 // Intersection dots are hidden when zoomed out; they'd just be noise.
 const INTERSECTION_MIN_ZOOM = 16;
@@ -199,6 +214,9 @@ export default function Map() {
   } = useIntersections();
   const [selected, setSelected] = useState<Selected | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  const [selectedPoi, setSelectedPoi] = useState<SelectedPoi | null>(null);
+  // Add-a-point flow: null when idle, otherwise the preselected kind (or null to choose).
+  const [adding, setAdding] = useState<{ kind: AddableKind | null } | null>(null);
 
   // Everyone / Mine colouring. Remembered per browser.
   const [viewMode, setViewModeState] = useState<ViewMode>(() =>
@@ -225,6 +243,7 @@ export default function Map() {
 
   const geo = useGeolocation();
   const myRatings = useMyRatings();
+  const pois = usePois(myRatings.browserId);
   const walk = useWalk();
   const [statsOpen, setStatsOpen] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
@@ -339,6 +358,7 @@ export default function Map() {
     const picked = pickNearestRef.current(lat, lng);
     if (picked) userHasSelected.current = true;
     setSelected(picked);
+    setSelectedPoi(null);
   }, []);
 
   const onEachFeature = useCallback(
@@ -581,6 +601,16 @@ export default function Map() {
           <SelectionHighlight selected={selected} innerColor={colorFor(selected.feature.properties)} />
         )}
 
+        {zoom >= POI_MIN_ZOOM && (
+          <PoiMarkers
+            access={pois.access?.features ?? []}
+            underpasses={pois.underpasses?.features ?? []}
+            selectedId={selectedPoi?.feature.properties.id ?? null}
+            onSelectAccess={(feature) => setSelectedPoi({ kind: "access", feature })}
+            onSelectUnderpass={(feature) => setSelectedPoi({ kind: "underpass", feature })}
+          />
+        )}
+
         <MapEvents onClick={handleMapClick} onZoom={setZoom} />
 
         {geo.position && (
@@ -612,7 +642,7 @@ export default function Map() {
         />
       </div>
 
-      <Legend mode={viewMode} offsetBottom={!!selected} />
+      <Legend mode={viewMode} offsetBottom={!!selected || !!selectedPoi || !!adding} />
 
       <LocateButton
         loading={geo.loading}
@@ -625,13 +655,59 @@ export default function Map() {
 
       <StatsButton walk={walkInProgress} onClick={() => setStatsOpen(true)} />
 
+      <AddButton onClick={() => { setSelectedPoi(null); setAdding({ kind: null }); }} />
+
       {intersectionActive && intersectionsError && (
         <div className="absolute left-4 right-4 top-32 z-[1000] rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 shadow sm:left-auto sm:w-80">
           Intersections unavailable: {intersectionsError}
         </div>
       )}
 
-      {selected && (
+      {adding && (
+        <AddPointSheet
+          initialKind={adding.kind}
+          onCancel={() => setAdding(null)}
+          onPlace={async (kind) => {
+            const centre = mapRef.current?.getCenter();
+            if (!centre) return;
+            if (kind === "underpass") {
+              const f = await pois.addUnderpass(centre.lat, centre.lng);
+              setSelectedPoi({ kind: "underpass", feature: f });
+            } else {
+              const f = await pois.addAccessPoint(kind, centre.lat, centre.lng);
+              setSelectedPoi({ kind: "access", feature: f });
+            }
+            setAdding(null);
+          }}
+        />
+      )}
+
+      {selectedPoi && !adding && (
+        <PoiPanel
+          selected={selectedPoi}
+          mine={pois.isMine(selectedPoi.feature.properties.id)}
+          onClose={() => setSelectedPoi(null)}
+          onRemove={async () => {
+            if (selectedPoi.kind === "underpass") await pois.removeUnderpass(selectedPoi.feature.properties.id);
+            else await pois.removeAccessPoint(selectedPoi.feature.properties.id);
+            setSelectedPoi(null);
+          }}
+          onVote={async (hasRamp) => {
+            if (selectedPoi.kind !== "underpass") return null;
+            const updated = await pois.voteUnderpass(selectedPoi.feature.properties.id, hasRamp);
+            if (updated) setSelectedPoi({ kind: "underpass", feature: updated });
+            return updated;
+          }}
+          onAddRamp={() => {
+            // Start the ramp right on the underpass; the user pans to the exact spot.
+            const [lng, lat] = selectedPoi.feature.geometry.coordinates;
+            mapRef.current?.panTo([lat, lng], { animate: true });
+            setAdding({ kind: "ramp" });
+          }}
+        />
+      )}
+
+      {selected && !selectedPoi && !adding && (
         <RatingPanel
           selected={selected}
           myRating={myRatings.get(selected.feature.properties.id)}

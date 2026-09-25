@@ -10,6 +10,8 @@
     "lint": "eslint",
     "migrate": "tsx scripts/migrate.ts",
     "seed": "tsx scripts/seed-segments.ts",
+    "seed:metro": "tsx scripts/seed-metro.ts",
+    "seed:underpasses": "tsx scripts/seed-underpasses.ts",
     "deploy": "vercel deploy --prod --scope dgpt1"
   },
   "dependencies": {
