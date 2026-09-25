@@ -80,3 +80,27 @@ export interface IntersectionRow {
   median_rating: number | null;
   rating_count: number;
 }
+
+/** Leaderboard window: votes first cast in the last 7 days, or ever. */
+export type LeaderboardPeriod = "week" | "all";
+
+export interface LeaderboardRow {
+  rank: number;
+  nickname: string;
+  /** Targets rated (sidewalks + intersections). */
+  votes: number;
+  /** Metres of sidewalk rated. */
+  meters: number;
+  /** Whether this row is the requesting browser. */
+  me: boolean;
+}
+
+/** GET /api/leaderboard response. */
+export interface LeaderboardResponse {
+  period: LeaderboardPeriod;
+  rows: LeaderboardRow[];
+  /** The requesting browser's own row, even when outside the top; null if it has no votes. */
+  me: LeaderboardRow | null;
+  /** How many browsers have voted in the period. */
+  raters: number;
+}

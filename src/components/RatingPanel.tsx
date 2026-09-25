@@ -12,7 +12,7 @@ const RATING_OPTIONS: { value: RatingValue; label: string; emoji: string; color:
 ];
 
 function formatMedian(value: number | null): string {
-  if (value === null) return "No ratings yet";
+  if (value === null) return "–";
   return value.toFixed(1);
 }
 
@@ -67,9 +67,13 @@ export default function RatingPanel({ selected, myRating, onClose, onRated }: Pr
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-gray-400">{kindLabel}</p>
           <h2 className="text-lg font-semibold text-gray-900">{selectedTitle(selected)}</h2>
-          <p className="text-sm text-gray-500">
-            Rating: {formatMedian(median_rating)} · {rating_count} vote{rating_count !== 1 ? "s" : ""}
-          </p>
+          {rating_count === 0 ? (
+            <p className="text-sm text-amber-700">Nobody has rated this yet. Be the first!</p>
+          ) : (
+            <p className="text-sm text-gray-500">
+              Rating: {formatMedian(median_rating)} · {rating_count} vote{rating_count !== 1 ? "s" : ""}
+            </p>
+          )}
           {myOption && (
             <p className="mt-1 text-xs text-gray-500">
               You rated this <span className="font-semibold text-gray-700">{myOption.label}</span>.

@@ -28,8 +28,25 @@ Useful scripts:
   Minimum 20 m, merged runs capped at 400 m.
 - **intersections**: nodes where 3+ segments meet.
 - **ratings** / **intersection_ratings**: one vote (0 terrible, 1 passable,
-  2 good) per anonymous browser id per target; a repeat vote replaces the old one.
+  2 good) per anonymous browser id per target; a repeat vote replaces the old one
+  (its `created_at` stays, so a vote is only ever counted once on the leaderboard).
   Medians are recomputed by a Postgres function on every vote.
+- **profiles**: a random nickname (adjective + creature, `src/lib/nicknames.ts`)
+  per browser id, created lazily by `/api/profile` or when the browser first
+  shows up on the leaderboard. The user can shuffle theirs.
+- **leaderboard(p_since)**: Postgres function returning votes and metres of
+  sidewalk per browser, served by `/api/leaderboard?period=week|all`. Browser
+  ids are the only credential a user has, so the API never returns them.
+
+## Walks and stats
+
+A "walk" is a run of first-time votes with no gap longer than 30 minutes,
+tracked in localStorage only (`src/hooks/useWalk.ts`). The trophy button on
+the map shows a live tally while a walk is in progress and opens the stats
+sheet (nickname, current walk, all-time totals, leaderboard). A walk that has
+gone quiet is closed on the next app start and its summary card is shown once.
+Nothing in the UI ends a walk explicitly, so switching live mode off to tap a
+missed street is still the same walk.
 
 ## Environments & deployment
 

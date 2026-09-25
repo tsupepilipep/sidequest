@@ -17,6 +17,8 @@ import { useSegments } from "@/hooks/useSegments";
 import { useIntersections } from "@/hooks/useIntersections";
 import { useGeolocation, type GeoPosition } from "@/hooks/useGeolocation";
 import { useMyRatings } from "@/hooks/useMyRatings";
+import { useWalk, walkTotals } from "@/hooks/useWalk";
+import { length } from "@turf/length";
 import { findNearestIntersection, findNearestSegment } from "@/lib/geo/snap";
 import type {
   IntersectionProperties,
@@ -32,6 +34,9 @@ import Legend from "./Legend";
 import LocateButton from "./LocateButton";
 import LiveButton from "./LiveButton";
 import SegmentedControl from "./SegmentedControl";
+import StatsButton from "./StatsButton";
+import StatsSheet from "./StatsSheet";
+import WalkSummaryCard from "./WalkSummaryCard";
 import UserLocationMarker from "./UserLocationMarker";
 
 import "leaflet/dist/leaflet.css";
@@ -220,6 +225,8 @@ export default function Map() {
 
   const geo = useGeolocation();
   const myRatings = useMyRatings();
+  const walk = useWalk();
+  const [statsOpen, setStatsOpen] = useState(false);
   const mapRef = useRef<LeafletMap | null>(null);
   const hasAutoSnapped = useRef(false);
   const userHasSelected = useRef(false);
@@ -450,6 +457,7 @@ export default function Map() {
   }, [liveMode, geo.position, pickNearest]);
 
   const { set: setMyRating } = myRatings;
+  const { record: recordWalk } = walk;
   const handleRated = useCallback(
     (
       targetId: string,
@@ -460,19 +468,42 @@ export default function Map() {
       setMyRating(targetId, newRating);
       if (kind === "segment") {
         if (!geojson) return;
+        // A first-time vote counts toward the current walk; a change of mind does not.
+        if (previousRating === null) {
+          const before = geojson.features.find((x) => x.properties.id === targetId);
+          if (before) {
+            recordWalk({
+              id: targetId,
+              kind,
+              first: before.properties.rating_count === 0,
+              meters: length(before, { units: "kilometers" }) * 1000,
+            });
+          }
+        }
         const updated = optimisticUpdate(geojson, targetId, newRating, previousRating);
         setData(updated);
         const f = updated.features.find((x) => x.properties.id === targetId);
         if (f) setSelected({ kind: "segment", feature: f });
       } else {
         if (!intersectionsGeo) return;
+        if (previousRating === null) {
+          const before = intersectionsGeo.features.find((x) => x.properties.id === targetId);
+          if (before) {
+            recordWalk({ id: targetId, kind, first: before.properties.rating_count === 0, meters: 0 });
+          }
+        }
         const updated = optimisticUpdate(intersectionsGeo, targetId, newRating, previousRating);
         setIntersectionsGeo(updated);
         const f = updated.features.find((x) => x.properties.id === targetId);
         if (f) setSelected({ kind: "intersection", feature: f });
       }
     },
-    [geojson, setData, intersectionsGeo, setIntersectionsGeo, setMyRating]
+    [geojson, setData, intersectionsGeo, setIntersectionsGeo, setMyRating, recordWalk]
+  );
+
+  const walkInProgress = useMemo(
+    () => (walk.walk && walk.walk.entries.length > 0 ? walkTotals(walk.walk.entries) : null),
+    [walk.walk]
   );
 
   // react-leaflet restyles a GeoJSON layer in place (setStyle) whenever its
@@ -592,6 +623,8 @@ export default function Map() {
 
       <LiveButton active={liveMode} error={geo.error} onToggle={toggleLiveMode} />
 
+      <StatsButton walk={walkInProgress} onClick={() => setStatsOpen(true)} />
+
       {intersectionActive && intersectionsError && (
         <div className="absolute left-4 right-4 top-32 z-[1000] rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 shadow sm:left-auto sm:w-80">
           Intersections unavailable: {intersectionsError}
@@ -608,6 +641,21 @@ export default function Map() {
           }}
           onRated={handleRated}
         />
+      )}
+
+      {statsOpen && (
+        <StatsSheet
+          browserId={myRatings.browserId}
+          walk={walk.walk}
+          segments={segments}
+          myRatings={myRatings.ratings}
+          onClose={() => setStatsOpen(false)}
+        />
+      )}
+
+      {/* A finished walk's card waits until the map is up and no sheet is open. */}
+      {walk.summary && !loading && !statsOpen && (
+        <WalkSummaryCard walk={walk.summary} onClose={walk.dismissSummary} />
       )}
     </div>
   );
