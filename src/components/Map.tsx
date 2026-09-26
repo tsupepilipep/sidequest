@@ -70,7 +70,9 @@ const PANES: { name: string; zIndex: number }[] = [
 
 // Point markers are DOM nodes and only useful once you can see the street
 // layout, so keep them for close zooms.
-const POI_MIN_ZOOM = 15;
+const POI_MIN_ZOOM = 16;
+// One level past the tiles' native 19, upscaled, so a street corner fills the screen.
+const MAX_ZOOM = 20;
 
 // Intersection dots are hidden when zoomed out; they'd just be noise.
 const INTERSECTION_MIN_ZOOM = 16;
@@ -137,8 +139,19 @@ function MapEvents({
   return null;
 }
 
-/** Captures the Leaflet map instance into a ref and creates the custom panes. */
-function MapRefSetter({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | null> }) {
+/**
+ * Captures the Leaflet map instance into a ref and creates the custom panes.
+ * MapContainer mounts its children only after the map exists, so this runs a
+ * render after the parent's own effects; `onReady` lets the parent re-run
+ * anything that needs the panes (e.g. hiding one).
+ */
+function MapRefSetter({
+  mapRef,
+  onReady,
+}: {
+  mapRef: React.MutableRefObject<LeafletMap | null>;
+  onReady: () => void;
+}) {
   const map = useMap();
   useEffect(() => {
     mapRef.current = map;
@@ -146,7 +159,8 @@ function MapRefSetter({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | 
       const pane = map.getPane(name) ?? map.createPane(name);
       pane.style.zIndex = String(zIndex);
     }
-  }, [map, mapRef]);
+    onReady();
+  }, [map, mapRef, onReady]);
   return null;
 }
 
@@ -214,6 +228,9 @@ export default function Map() {
   } = useIntersections();
   const [selected, setSelected] = useState<Selected | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  // Flips once the map and its panes exist.
+  const [mapReady, setMapReady] = useState(false);
+  const handleMapReady = useCallback(() => setMapReady(true), []);
   const [selectedPoi, setSelectedPoi] = useState<SelectedPoi | null>(null);
   // Add-a-point flow: null when idle, otherwise the preselected kind (or null to choose).
   const [adding, setAdding] = useState<{ kind: AddableKind | null } | null>(null);
@@ -537,10 +554,11 @@ export default function Map() {
   // the layer, so crossing the zoom threshold doesn't rebuild ~9k markers.
   const showIntersections =
     zoom >= (intersectionActive ? INTERSECTION_MIN_ZOOM_ACTIVE : INTERSECTION_MIN_ZOOM);
+  // Also depends on mapReady: on first render the pane doesn't exist yet.
   useEffect(() => {
     const pane = mapRef.current?.getPane(INTERSECTIONS_PANE);
     if (pane) pane.style.display = showIntersections ? "" : "none";
-  }, [showIntersections]);
+  }, [showIntersections, mapReady]);
 
   if (error) {
     return (
@@ -564,6 +582,7 @@ export default function Map() {
       <MapContainer
         center={SOFIA_CENTER}
         zoom={DEFAULT_ZOOM}
+        maxZoom={MAX_ZOOM}
         className="h-full w-full"
         zoomControl={false}
         // Draw the ~17k segment paths and ~9k intersection dots on canvases
@@ -571,10 +590,15 @@ export default function Map() {
         // especially while panning in live mode.
         preferCanvas
       >
-        <MapRefSetter mapRef={mapRef} />
+        <MapRefSetter mapRef={mapRef} onReady={handleMapReady} />
+        {/* Standard OSM tiles, desaturated via CSS (see globals.css) so the
+            street names stay readable while the ratings and markers carry
+            the colour. OSM serves tiles to zoom 19; 20 is an upscale. */}
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maxNativeZoom={19}
+          maxZoom={MAX_ZOOM}
         />
 
         {geojson && (
@@ -696,6 +720,12 @@ export default function Map() {
             if (selectedPoi.kind !== "underpass") return null;
             const updated = await pois.voteUnderpass(selectedPoi.feature.properties.id, hasRamp);
             if (updated) setSelectedPoi({ kind: "underpass", feature: updated });
+            return updated;
+          }}
+          onClosed={async (closed) => {
+            if (selectedPoi.kind !== "access") return null;
+            const updated = await pois.voteAccessClosed(selectedPoi.feature.properties.id, closed);
+            if (updated) setSelectedPoi({ kind: "access", feature: updated });
             return updated;
           }}
           onAddRamp={() => {

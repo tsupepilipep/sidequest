@@ -1,11 +1,12 @@
 "use client";
 
 import type { ViewMode } from "@/lib/types";
-import { ACCESS_COLOR, GLYPH, UNDERPASS_COLOR } from "./PoiMarkers";
+import { ACCESS_COLOR, CLOSED_COLOR, GLYPH, UNDERPASS_COLOR } from "./PoiMarkers";
 
 const POIS = [
   { color: ACCESS_COLOR.elevator, label: "Metro elevator", glyph: GLYPH.elevator, round: false },
   { color: ACCESS_COLOR.ramp, label: "Ramp", glyph: GLYPH.ramp, round: false },
+  { color: CLOSED_COLOR, label: "Permanently closed", glyph: GLYPH.elevator, round: false },
   { color: UNDERPASS_COLOR.ramp, label: "Underpass with ramp", glyph: GLYPH.underpass, round: true },
   { color: UNDERPASS_COLOR.no_ramp, label: "Underpass, no ramps", glyph: GLYPH.underpass, round: true },
   { color: UNDERPASS_COLOR.unknown, label: "Underpass, unknown", glyph: GLYPH.underpass, round: true },

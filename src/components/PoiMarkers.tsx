@@ -16,6 +16,9 @@ export const ACCESS_LABEL: Record<AccessKind, string> = {
   elevator: "Elevator",
   ramp: "Ramp",
 };
+/** A point reported permanently closed loses its colour. */
+export const CLOSED_COLOR = "#6b7280";
+export const isClosed = (f: AccessPointFeature) => f.properties.closed_votes > 0;
 
 /** An underpass is a question ("can I get through without stairs?"), so it uses the verdict colours. */
 export type UnderpassState = "ramp" | "no_ramp" | "unknown";
@@ -61,8 +64,12 @@ export function makePoiIcon(color: string, glyph: string, selected: boolean, rou
 
 export function accessTitle(f: AccessPointFeature): string {
   const { kind, label, source } = f.properties;
-  if (label) return `${ACCESS_LABEL[kind]} at ${label}`;
-  return source === "user" ? `${ACCESS_LABEL[kind]} (added by a walker)` : ACCESS_LABEL[kind];
+  const base = label
+    ? `${ACCESS_LABEL[kind]} at ${label}`
+    : source === "user"
+      ? `${ACCESS_LABEL[kind]} (added by a walker)`
+      : ACCESS_LABEL[kind];
+  return isClosed(f) ? `${base} (permanently closed)` : base;
 }
 
 export function underpassTitle(f: UnderpassFeature): string {
@@ -87,6 +94,8 @@ export default function PoiMarkers({ access, underpasses, selectedId, onSelectAc
     return {
       elevator: pair(ACCESS_COLOR.elevator, GLYPH.elevator),
       ramp: pair(ACCESS_COLOR.ramp, GLYPH.ramp),
+      elevator_closed: pair(CLOSED_COLOR, GLYPH.elevator),
+      ramp_closed: pair(CLOSED_COLOR, GLYPH.ramp),
       ramp_up: pair(UNDERPASS_COLOR.ramp, GLYPH.underpass, true),
       no_ramp: pair(UNDERPASS_COLOR.no_ramp, GLYPH.underpass, true),
       unknown: pair(UNDERPASS_COLOR.unknown, GLYPH.underpass, true),
@@ -130,7 +139,13 @@ export default function PoiMarkers({ access, underpasses, selectedId, onSelectAc
         return marker(f.properties.id, f.geometry.coordinates as [number, number], icon, `${underpassTitle(f)}: ${UNDERPASS_LABEL[state]}`, () => onSelectUnderpass(f));
       })}
       {access.map((f) =>
-        marker(f.properties.id, f.geometry.coordinates as [number, number], icons[f.properties.kind], accessTitle(f), () => onSelectAccess(f))
+        marker(
+          f.properties.id,
+          f.geometry.coordinates as [number, number],
+          isClosed(f) ? icons[`${f.properties.kind}_closed`] : icons[f.properties.kind],
+          accessTitle(f),
+          () => onSelectAccess(f)
+        )
       )}
     </>
   );

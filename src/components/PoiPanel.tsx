@@ -4,11 +4,13 @@ import { useState } from "react";
 import {
   ACCESS_COLOR,
   ACCESS_LABEL,
+  CLOSED_COLOR,
+  isClosed,
   UNDERPASS_COLOR,
   UNDERPASS_LABEL,
   underpassState,
 } from "./PoiMarkers";
-import type { SelectedPoi, UnderpassFeature } from "@/lib/types";
+import type { AccessPointFeature, SelectedPoi, UnderpassFeature } from "@/lib/types";
 
 const SHEET =
   "absolute bottom-0 left-0 right-0 z-[1000] rounded-t-2xl bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:bottom-4 sm:left-1/2 sm:right-auto sm:w-96 sm:-translate-x-1/2 sm:rounded-2xl sm:pb-4";
@@ -39,12 +41,14 @@ interface Props {
   onRemove: () => Promise<void>;
   /** Underpass only: vote true/false, or null to withdraw. */
   onVote: (hasRamp: boolean | null) => Promise<UnderpassFeature | null>;
+  /** Elevator/ramp only: report permanently closed (true) or withdraw (null). */
+  onClosed: (closed: boolean | null) => Promise<AccessPointFeature | null>;
   /** Underpass only: start placing a ramp next to it. */
   onAddRamp: () => void;
 }
 
 /** Bottom sheet for an elevator, ramp or underpass. */
-export default function PoiPanel({ selected, mine, onClose, onRemove, onVote, onAddRamp }: Props) {
+export default function PoiPanel({ selected, mine, onClose, onRemove, onVote, onClosed, onAddRamp }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,27 +68,46 @@ export default function PoiPanel({ selected, mine, onClose, onRemove, onVote, on
   const attribution = source === "osm" ? "According to OpenStreetMap" : mine ? "Added by you" : "Added by a walker";
 
   if (selected.kind === "access") {
-    const { kind, label, level } = selected.feature.properties;
+    const { kind, label, level, closed_votes, my_closed } = selected.feature.properties;
+    const closed = isClosed(selected.feature);
+    const noun = ACCESS_LABEL[kind].toLowerCase();
     return (
       <div className={SHEET}>
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-              <Swatch color={ACCESS_COLOR[kind]} /> {ACCESS_LABEL[kind]}
+              <Swatch color={closed ? CLOSED_COLOR : ACCESS_COLOR[kind]} /> {ACCESS_LABEL[kind]}
             </p>
             <h2 className="text-lg font-semibold text-gray-900">{label ?? (kind === "elevator" ? "Metro elevator" : "Ramp")}</h2>
+            {closed && (
+              <p className="mt-1 text-sm font-medium text-gray-700">
+                Permanently closed · reported by {closed_votes} {closed_votes === 1 ? "person" : "people"}
+              </p>
+            )}
             {level && <p className="mt-1 text-sm text-gray-600">Levels: {level.replaceAll(";", " · ")}</p>}
             <p className="mt-1 text-xs text-gray-400">{attribution}</p>
           </div>
           <CloseButton onClick={onClose} />
         </div>
+        <button
+          onClick={() => run(() => onClosed(my_closed === true ? null : true))}
+          disabled={busy}
+          aria-pressed={my_closed === true}
+          className={`mt-3 w-full rounded-xl px-3 py-3 text-sm font-medium transition-colors disabled:opacity-50 ${
+            my_closed === true
+              ? "bg-gray-700 text-white ring-2 ring-gray-900 ring-offset-2"
+              : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+          }`}
+        >
+          {my_closed === true ? "✓ Reported as permanently closed · tap to undo" : `Report this ${noun} as permanently closed`}
+        </button>
         {mine && (
           <button
             onClick={() => run(onRemove)}
             disabled={busy}
-            className="mt-3 w-full rounded-xl border border-red-200 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+            className="mt-2 w-full rounded-xl border border-red-200 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
           >
-            Remove this {ACCESS_LABEL[kind].toLowerCase()}
+            Remove this {noun}
           </button>
         )}
         {error && <p className="mt-2 text-sm text-red-600">Error: {error}</p>}

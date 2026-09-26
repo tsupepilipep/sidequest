@@ -45,3 +45,8 @@ body {
     opacity: 0;
   }
 }
+
+/* Quiet basemap: fade the OSM tiles so rating colours and markers stand out. */
+.leaflet-tile-pane {
+  filter: saturate(0.25) brightness(1.06) contrast(0.92);
+}

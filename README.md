@@ -39,6 +39,9 @@ Useful scripts:
   and any elevator OSM lacks, are added by users on the spot with the "+" button
   or from an underpass's panel. A user may remove a point they added (the API
   checks `created_by`); ids of a browser's own points are cached in localStorage.
+- **access_point_votes**: one "permanently closed" report per browser per
+  elevator or ramp, withdrawable. Any report greys the marker and says so in
+  its panel.
 - **underpasses**: one point per pedestrian underpass, clustered from OSM tunnel
   ways (`pnpm seed:underpasses`: tunnels sharing a node, or joined by an untagged
   way under 30 m such as the stairs down, form one underpass) or added by a user.
@@ -46,6 +49,14 @@ Useful scripts:
   An underpass shows green when a ramp access point lies within 60 m or "there is
   a ramp" votes outnumber "no ramps", red when there are "no ramps" votes, grey
   otherwise.
+
+## Map
+
+Standard OpenStreetMap tiles, desaturated with a CSS filter on the tile pane
+(`globals.css`) so rating colours and markers carry the colour. Tiles are
+native to zoom 19 and upscaled to 20. Point markers (elevators, ramps,
+underpasses) appear from zoom 16; intersection dots from 16 (15 when rating
+intersections).
 
 ## Adding points
 

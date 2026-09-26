@@ -53,6 +53,14 @@ export function usePois(browserId: string) {
     typeof window === "undefined" ? new Set() : readMine()
   );
 
+  const loadAccess = useCallback(() => {
+    if (!browserId) return;
+    fetch(`/api/access-points?browser_id=${encodeURIComponent(browserId)}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((geojson: AccessPointsGeoJSON) => setAccess(geojson))
+      .catch((err) => console.error("Error loading access points:", err));
+  }, [browserId]);
+
   const loadUnderpasses = useCallback(() => {
     if (!browserId) return;
     fetch(`/api/underpasses?browser_id=${encodeURIComponent(browserId)}`)
@@ -62,12 +70,9 @@ export function usePois(browserId: string) {
   }, [browserId]);
 
   useEffect(() => {
-    fetch("/api/access-points")
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then((geojson: AccessPointsGeoJSON) => setAccess(geojson))
-      .catch((err) => console.error("Error loading access points:", err));
+    loadAccess();
     loadUnderpasses();
-  }, [loadUnderpasses]);
+  }, [loadAccess, loadUnderpasses]);
 
   const remember = useCallback((id: string, keep: boolean) => {
     setMine((prev) => {
@@ -124,6 +129,29 @@ export function usePois(browserId: string) {
     [browserId, remember]
   );
 
+  /** Report an elevator or ramp as permanently closed; null withdraws. Returns the updated feature. */
+  const voteAccessClosed = useCallback(
+    async (id: string, closed: boolean | null): Promise<AccessPointFeature | null> => {
+      await post("/api/access-points/vote", { access_point_id: id, browser_id: browserId, closed });
+      let updated: AccessPointFeature | null = null;
+      setAccess((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          features: prev.features.map((f) => {
+            if (f.properties.id !== id) return f;
+            const p = f.properties;
+            const count = p.closed_votes - (p.my_closed === true ? 1 : 0) + (closed === true ? 1 : 0);
+            updated = { ...f, properties: { ...p, closed_votes: count, my_closed: closed } };
+            return updated;
+          }),
+        };
+      });
+      return updated;
+    },
+    [browserId]
+  );
+
   /** Vote on an underpass; null withdraws. Returns the updated feature. */
   const voteUnderpass = useCallback(
     async (id: string, hasRamp: boolean | null): Promise<UnderpassFeature | null> => {
@@ -160,5 +188,6 @@ export function usePois(browserId: string) {
     addUnderpass,
     removeUnderpass,
     voteUnderpass,
+    voteAccessClosed,
   };
 }

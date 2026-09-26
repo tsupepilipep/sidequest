@@ -119,6 +119,10 @@ export interface AccessPointProperties {
   label: string | null;
   /** OSM level tag, e.g. "0;-1", if any. */
   level: string | null;
+  /** Reports saying this is permanently closed. */
+  closed_votes: number;
+  /** The requesting browser's own report, if any. */
+  my_closed: boolean | null;
 }
 
 export type AccessPointFeature = Feature<Point, AccessPointProperties>;

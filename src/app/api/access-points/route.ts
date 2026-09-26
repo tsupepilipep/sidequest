@@ -6,25 +6,47 @@ import type { AccessPointFeature, AccessPointRow, AccessPointsGeoJSON } from "@/
 
 const NO_STORE = { "Cache-Control": "private, no-store" };
 
-/** GET /api/access-points -> GeoJSON of elevators and ramps (OSM and user-added). */
-export async function GET() {
+/**
+ * GET /api/access-points?browser_id=... -> GeoJSON of elevators and ramps
+ * (OSM and user-added) with "permanently closed" report counts and the
+ * caller's own report.
+ */
+export async function GET(request: NextRequest) {
+  const browserId = request.nextUrl.searchParams.get("browser_id");
   const supabase = getServiceClient();
-  const { data, error } = await supabase
-    .from("access_points")
-    .select("id, kind, source, label, level, geojson")
-    .order("id");
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const [points, votes] = await Promise.all([
+    supabase.from("access_points").select("id, kind, source, label, level, geojson").order("id"),
+    supabase.from("access_point_votes").select("access_point_id, browser_id, closed"),
+  ]);
+  const failed = points.error ?? votes.error;
+  if (failed) return NextResponse.json({ error: failed.message }, { status: 500 });
 
-  const features: AccessPointFeature[] = (data as AccessPointRow[]).map((row) => ({
-    type: "Feature" as const,
-    geometry: row.geojson,
-    properties: { id: row.id, kind: row.kind, source: row.source, label: row.label, level: row.level },
-  }));
-  const geojson: AccessPointsGeoJSON = { type: "FeatureCollection", features };
-  // Short shared cache: user additions should show up for others within a minute.
-  return NextResponse.json(geojson, {
-    headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" },
+  const tally = new Map<string, { closed: number; mine: boolean | null }>();
+  for (const v of votes.data ?? []) {
+    const t = tally.get(v.access_point_id as string) ?? { closed: 0, mine: null };
+    if (v.closed) t.closed++;
+    if (browserId && v.browser_id === browserId) t.mine = v.closed as boolean;
+    tally.set(v.access_point_id as string, t);
+  }
+
+  const features: AccessPointFeature[] = (points.data as AccessPointRow[]).map((row) => {
+    const t = tally.get(row.id) ?? { closed: 0, mine: null };
+    return {
+      type: "Feature" as const,
+      geometry: row.geojson,
+      properties: {
+        id: row.id,
+        kind: row.kind,
+        source: row.source,
+        label: row.label,
+        level: row.level,
+        closed_votes: t.closed,
+        my_closed: t.mine,
+      },
+    };
   });
+  const geojson: AccessPointsGeoJSON = { type: "FeatureCollection", features };
+  return NextResponse.json(geojson, { headers: NO_STORE });
 }
 
 /** POST /api/access-points { kind, lat, lng, browser_id } -> the new feature. */
@@ -50,7 +72,7 @@ export async function POST(request: NextRequest) {
   const feature: AccessPointFeature = {
     type: "Feature",
     geometry: row.geojson,
-    properties: { id: row.id, kind, source: "user", label: null, level: null },
+    properties: { id: row.id, kind, source: "user", label: null, level: null, closed_votes: 0, my_closed: null },
   };
   return NextResponse.json(feature, { headers: NO_STORE });
 }
