@@ -16,8 +16,9 @@ export const ACCESS_LABEL: Record<AccessKind, string> = {
   elevator: "Elevator",
   ramp: "Ramp",
 };
-/** A point reported permanently closed loses its colour. */
-export const CLOSED_COLOR = "#6b7280";
+/** A point reported permanently closed keeps its colour and gets a red slash. */
+export const CLOSED_SLASH = "#ef4444";
+export const CLOSED_SLASH_STYLE = `linear-gradient(45deg, transparent 42%, ${CLOSED_SLASH} 42%, ${CLOSED_SLASH} 58%, transparent 58%)`;
 export const isClosed = (f: AccessPointFeature) => f.properties.closed_votes > 0;
 
 /** An underpass is a question ("can I get through without stairs?"), so it uses the verdict colours. */
@@ -52,13 +53,22 @@ export const GLYPH = {
 // big that neighbouring markers (a lift beside an underpass) steal taps.
 const HIT_SIZE = 36;
 
-export function makePoiIcon(color: string, glyph: string, selected: boolean, round = false): L.DivIcon {
+export function makePoiIcon(
+  color: string,
+  glyph: string,
+  selected: boolean,
+  round = false,
+  closed = false
+): L.DivIcon {
   const size = selected ? 30 : 24;
+  const slash = closed
+    ? `<div style="position:absolute;inset:-2px;border-radius:inherit;background:${CLOSED_SLASH_STYLE}"></div>`
+    : "";
   return L.divIcon({
     className: "",
     iconSize: [HIT_SIZE, HIT_SIZE],
     iconAnchor: [HIT_SIZE / 2, HIT_SIZE / 2],
-    html: `<div style="width:${HIT_SIZE}px;height:${HIT_SIZE}px;display:flex;align-items:center;justify-content:center"><div style="width:${size}px;height:${size}px;border-radius:${round ? "50%" : "7px"};background:${color};display:flex;border:2px solid ${selected ? "#1d4ed8" : "#fff"};box-shadow:0 1px 3px rgba(0,0,0,.4)">${glyph}</div></div>`,
+    html: `<div style="width:${HIT_SIZE}px;height:${HIT_SIZE}px;display:flex;align-items:center;justify-content:center"><div style="position:relative;width:${size}px;height:${size}px;border-radius:${round ? "50%" : "7px"};background:${color};display:flex;border:2px solid ${selected ? "#1d4ed8" : "#fff"};box-shadow:0 1px 3px rgba(0,0,0,.4);${closed ? "opacity:.85" : ""}">${glyph}${slash}</div></div>`,
   });
 }
 
@@ -87,15 +97,15 @@ interface Props {
 /** Markers for elevators, ramps and underpasses. */
 export default function PoiMarkers({ access, underpasses, selectedId, onSelectAccess, onSelectUnderpass }: Props) {
   const icons = useMemo(() => {
-    const pair = (color: string, glyph: string, round = false) => ({
-      normal: makePoiIcon(color, glyph, false, round),
-      selected: makePoiIcon(color, glyph, true, round),
+    const pair = (color: string, glyph: string, round = false, closed = false) => ({
+      normal: makePoiIcon(color, glyph, false, round, closed),
+      selected: makePoiIcon(color, glyph, true, round, closed),
     });
     return {
       elevator: pair(ACCESS_COLOR.elevator, GLYPH.elevator),
       ramp: pair(ACCESS_COLOR.ramp, GLYPH.ramp),
-      elevator_closed: pair(CLOSED_COLOR, GLYPH.elevator),
-      ramp_closed: pair(CLOSED_COLOR, GLYPH.ramp),
+      elevator_closed: pair(ACCESS_COLOR.elevator, GLYPH.elevator, false, true),
+      ramp_closed: pair(ACCESS_COLOR.ramp, GLYPH.ramp, false, true),
       ramp_up: pair(UNDERPASS_COLOR.ramp, GLYPH.underpass, true),
       no_ramp: pair(UNDERPASS_COLOR.no_ramp, GLYPH.underpass, true),
       unknown: pair(UNDERPASS_COLOR.unknown, GLYPH.underpass, true),

@@ -1,12 +1,12 @@
 "use client";
 
 import type { ViewMode } from "@/lib/types";
-import { ACCESS_COLOR, CLOSED_COLOR, GLYPH, UNDERPASS_COLOR } from "./PoiMarkers";
+import { ACCESS_COLOR, CLOSED_SLASH_STYLE, GLYPH, UNDERPASS_COLOR } from "./PoiMarkers";
 
 const POIS = [
   { color: ACCESS_COLOR.elevator, label: "Metro elevator", glyph: GLYPH.elevator, round: false },
   { color: ACCESS_COLOR.ramp, label: "Ramp", glyph: GLYPH.ramp, round: false },
-  { color: CLOSED_COLOR, label: "Permanently closed", glyph: GLYPH.elevator, round: false },
+  { color: ACCESS_COLOR.elevator, label: "Permanently closed", glyph: GLYPH.elevator, round: false, closed: true },
   { color: UNDERPASS_COLOR.ramp, label: "Underpass with ramp", glyph: GLYPH.underpass, round: true },
   { color: UNDERPASS_COLOR.no_ramp, label: "Underpass, no ramps", glyph: GLYPH.underpass, round: true },
   { color: UNDERPASS_COLOR.unknown, label: "Underpass, unknown", glyph: GLYPH.underpass, round: true },
@@ -43,13 +43,15 @@ export default function Legend({ mode, offsetBottom = false }: Props) {
         </div>
       ))}
       <div className="mt-1 border-t border-gray-200 pt-1">
-        {POIS.map(({ color, label, glyph, round }) => (
+        {POIS.map(({ color, label, glyph, round, closed }) => (
           <div key={label} className="flex items-center gap-2 py-0.5">
             <span
-              className={`inline-flex h-4 w-4 shrink-0 ${round ? "rounded-full" : "rounded-[4px]"}`}
+              className={`relative inline-flex h-4 w-4 shrink-0 overflow-hidden ${round ? "rounded-full" : "rounded-[4px]"}`}
               style={{ backgroundColor: color }}
-              dangerouslySetInnerHTML={{ __html: glyph }}
-            />
+            >
+              <span className="absolute inset-0" dangerouslySetInnerHTML={{ __html: glyph }} />
+              {closed && <span className="absolute inset-0" style={{ background: CLOSED_SLASH_STYLE }} />}
+            </span>
             <span className="text-gray-600">{label}</span>
           </div>
         ))}

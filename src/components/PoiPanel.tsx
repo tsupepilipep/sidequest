@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   ACCESS_COLOR,
   ACCESS_LABEL,
-  CLOSED_COLOR,
   isClosed,
   UNDERPASS_COLOR,
   UNDERPASS_LABEL,
@@ -76,7 +75,7 @@ export default function PoiPanel({ selected, mine, onClose, onRemove, onVote, on
         <div className="flex items-start justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-              <Swatch color={closed ? CLOSED_COLOR : ACCESS_COLOR[kind]} /> {ACCESS_LABEL[kind]}
+              <Swatch color={ACCESS_COLOR[kind]} /> {ACCESS_LABEL[kind]}{closed && " · closed"}
             </p>
             <h2 className="text-lg font-semibold text-gray-900">{label ?? (kind === "elevator" ? "Metro elevator" : "Ramp")}</h2>
             {closed && (
